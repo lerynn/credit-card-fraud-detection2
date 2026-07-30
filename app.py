@@ -175,15 +175,11 @@ if predict_button:
 
         # Convert Female and Male back to F and M
         gender_mapping = {
-            "Female": "F",
-            "Male": "M"
+            "Female": 0,
+            "Male": 1
         }
 
-        encoded_gender = label_encoders[
-            "gender"
-        ].transform(
-            [gender_mapping[gender]]
-        )[0]
+        encoded_gender = gender_mapping[gender]
 
         # Convert state using saved encoder
         encoded_state = label_encoders[
