@@ -1,0 +1,258 @@
+import joblib
+import pandas as pd
+import streamlit as st
+
+
+# Page settings
+st.set_page_config(
+    page_title="FraudGuard AI",
+    page_icon="💳",
+    layout="wide"
+)
+
+
+# Load saved files
+try:
+    model = joblib.load("fraud_model.pkl")
+    scaler = joblib.load("scaler.pkl")
+    label_encoders = joblib.load("label_encoders.pkl")
+    feature_names = joblib.load("feature_names.pkl")
+
+except FileNotFoundError:
+    st.error("One or more model files could not be found.")
+    st.stop()
+
+except Exception as error:
+    st.error(f"Error loading model files: {error}")
+    st.stop()
+
+
+# Title
+st.title("💳 FraudGuard AI")
+st.subheader("Credit Card Fraud Detection")
+
+st.write(
+    "Enter the transaction information below. "
+    "The machine learning model will predict whether the transaction "
+    "is likely to be legitimate or fraudulent."
+)
+
+st.warning(
+    "This application is created for educational purposes only."
+)
+
+
+# Get the original category choices from the saved encoders
+category_options = list(label_encoders["category"].classes_)
+gender_options = list(label_encoders["gender"].classes_)
+state_options = list(label_encoders["state"].classes_)
+
+
+# Input form
+with st.form("fraud_prediction_form"):
+
+    st.markdown("### Transaction Information")
+
+    column1, column2 = st.columns(2)
+
+    with column1:
+        category = st.selectbox(
+            "Merchant Category",
+            category_options
+        )
+
+        amount = st.number_input(
+            "Transaction Amount",
+            min_value=0.0,
+            value=50.0,
+            step=1.0
+        )
+
+        gender = st.selectbox(
+            "Customer Gender",
+            gender_options
+        )
+
+        state = st.selectbox(
+            "Customer State",
+            state_options
+        )
+
+        city_population = st.number_input(
+            "City Population",
+            min_value=0,
+            value=50000,
+            step=1000
+        )
+
+        customer_latitude = st.number_input(
+            "Customer Latitude",
+            value=40.0000,
+            format="%.4f"
+        )
+
+        customer_longitude = st.number_input(
+            "Customer Longitude",
+            value=-75.0000,
+            format="%.4f"
+        )
+
+    with column2:
+        merchant_latitude = st.number_input(
+            "Merchant Latitude",
+            value=40.0000,
+            format="%.4f"
+        )
+
+        merchant_longitude = st.number_input(
+            "Merchant Longitude",
+            value=-75.0000,
+            format="%.4f"
+        )
+
+        transaction_hour = st.slider(
+            "Transaction Hour",
+            min_value=0,
+            max_value=23,
+            value=12
+        )
+
+        transaction_day = st.selectbox(
+            "Transaction Day",
+            options=[0, 1, 2, 3, 4, 5, 6],
+            format_func=lambda day: [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday"
+            ][day]
+        )
+
+        transaction_month = st.selectbox(
+            "Transaction Month",
+            options=list(range(1, 13)),
+            format_func=lambda month: [
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December"
+            ][month - 1]
+        )
+
+        customer_age = st.number_input(
+            "Customer Age",
+            min_value=18,
+            max_value=100,
+            value=35
+        )
+
+    predict_button = st.form_submit_button(
+        "Predict Transaction"
+    )
+
+
+# Make prediction
+if predict_button:
+
+    try:
+        # Convert categorical values using saved encoders
+        encoded_category = label_encoders["category"].transform(
+            [category]
+        )[0]
+
+        encoded_gender = label_encoders["gender"].transform(
+            [gender]
+        )[0]
+
+        encoded_state = label_encoders["state"].transform(
+            [state]
+        )[0]
+
+        # Create transaction using the same feature order as training
+        transaction = pd.DataFrame(
+            [{
+                "category": encoded_category,
+                "amt": amount,
+                "gender": encoded_gender,
+                "state": encoded_state,
+                "city_pop": city_population,
+                "lat": customer_latitude,
+                "long": customer_longitude,
+                "merch_lat": merchant_latitude,
+                "merch_long": merchant_longitude,
+                "transaction_hour": transaction_hour,
+                "transaction_day": transaction_day,
+                "transaction_month": transaction_month,
+                "customer_age": customer_age
+            }]
+        )
+
+        # Ensure columns follow the training order
+        transaction = transaction[feature_names]
+
+        # Scale the same numerical columns used during training
+        numerical_columns = [
+            "amt",
+            "city_pop",
+            "lat",
+            "long",
+            "merch_lat",
+            "merch_long",
+            "transaction_hour",
+            "transaction_day",
+            "transaction_month",
+            "customer_age"
+        ]
+
+        transaction[numerical_columns] = scaler.transform(
+            transaction[numerical_columns]
+        )
+
+        prediction = model.predict(transaction)[0]
+
+        if hasattr(model, "predict_proba"):
+            probability = model.predict_proba(transaction)[0]
+        else:
+            probability = None
+
+        st.divider()
+
+        if prediction == 1:
+            st.error("⚠️ Possible Fraudulent Transaction")
+
+            if probability is not None:
+                st.write(
+                    f"Fraud probability: **{probability[1] * 100:.2f}%**"
+                )
+
+            st.write(
+                "The transaction contains patterns that the model "
+                "associates with fraudulent activity."
+            )
+
+        else:
+            st.success("✅ Likely Legitimate Transaction")
+
+            if probability is not None:
+                st.write(
+                    f"Legitimate probability: **{probability[0] * 100:.2f}%**"
+                )
+
+            st.write(
+                "The transaction does not appear to contain strong "
+                "fraud indicators."
+            )
+
+    except Exception as error:
+        st.error(f"Prediction error: {error}")
