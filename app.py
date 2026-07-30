@@ -3,7 +3,9 @@ import pandas as pd
 import streamlit as st
 
 
+# -----------------------------
 # Page settings
+# -----------------------------
 st.set_page_config(
     page_title="FraudGuard AI",
     page_icon="💳",
@@ -11,7 +13,9 @@ st.set_page_config(
 )
 
 
-# Load saved files
+# -----------------------------
+# Load saved model files
+# -----------------------------
 try:
     model = joblib.load("fraud_model.pkl")
     scaler = joblib.load("scaler.pkl")
@@ -27,13 +31,15 @@ except Exception as error:
     st.stop()
 
 
-# Title
+# -----------------------------
+# Page title and description
+# -----------------------------
 st.title("💳 FraudGuard AI")
 st.subheader("Credit Card Fraud Detection")
 
 st.write(
     "Enter the transaction information below. "
-    "The machine learning model will predict whether the transaction "
+    "The machine learning model will estimate whether the transaction "
     "is likely to be legitimate or fraudulent."
 )
 
@@ -42,13 +48,26 @@ st.warning(
 )
 
 
-# Get the original category choices from the saved encoders
-category_options = list(label_encoders["category"].classes_)
-gender_options = list(label_encoders["gender"].classes_)
-state_options = list(label_encoders["state"].classes_)
+# -----------------------------
+# Dropdown options
+# -----------------------------
+category_options = list(
+    label_encoders["category"].classes_
+)
+
+state_options = list(
+    label_encoders["state"].classes_
+)
+
+gender_options = [
+    "Female",
+    "Male"
+]
 
 
+# -----------------------------
 # Input form
+# -----------------------------
 with st.form("fraud_prediction_form"):
 
     st.markdown("### Transaction Information")
@@ -56,6 +75,7 @@ with st.form("fraud_prediction_form"):
     column1, column2 = st.columns(2)
 
     with column1:
+
         category = st.selectbox(
             "Merchant Category",
             category_options
@@ -85,30 +105,7 @@ with st.form("fraud_prediction_form"):
             step=1000
         )
 
-        customer_latitude = st.number_input(
-            "Customer Latitude",
-            value=40.0000,
-            format="%.4f"
-        )
-
-        customer_longitude = st.number_input(
-            "Customer Longitude",
-            value=-75.0000,
-            format="%.4f"
-        )
-
     with column2:
-        merchant_latitude = st.number_input(
-            "Merchant Latitude",
-            value=40.0000,
-            format="%.4f"
-        )
-
-        merchant_longitude = st.number_input(
-            "Merchant Longitude",
-            value=-75.0000,
-            format="%.4f"
-        )
 
         transaction_hour = st.slider(
             "Transaction Hour",
@@ -162,24 +159,40 @@ with st.form("fraud_prediction_form"):
     )
 
 
+# -----------------------------
 # Make prediction
+# -----------------------------
 if predict_button:
 
     try:
-        # Convert categorical values using saved encoders
-        encoded_category = label_encoders["category"].transform(
+
+        # Convert category using saved encoder
+        encoded_category = label_encoders[
+            "category"
+        ].transform(
             [category]
         )[0]
 
-        encoded_gender = label_encoders["gender"].transform(
-            [gender]
+        # Convert Female and Male back to F and M
+        gender_mapping = {
+            "Female": "F",
+            "Male": "M"
+        }
+
+        encoded_gender = label_encoders[
+            "gender"
+        ].transform(
+            [gender_mapping[gender]]
         )[0]
 
-        encoded_state = label_encoders["state"].transform(
+        # Convert state using saved encoder
+        encoded_state = label_encoders[
+            "state"
+        ].transform(
             [state]
         )[0]
 
-        # Create transaction using the same feature order as training
+        # Create one transaction row
         transaction = pd.DataFrame(
             [{
                 "category": encoded_category,
@@ -187,10 +200,6 @@ if predict_button:
                 "gender": encoded_gender,
                 "state": encoded_state,
                 "city_pop": city_population,
-                "lat": customer_latitude,
-                "long": customer_longitude,
-                "merch_lat": merchant_latitude,
-                "merch_long": merchant_longitude,
                 "transaction_hour": transaction_hour,
                 "transaction_day": transaction_day,
                 "transaction_month": transaction_month,
@@ -198,42 +207,55 @@ if predict_button:
             }]
         )
 
-        # Ensure columns follow the training order
-        transaction = transaction[feature_names]
+        # Ensure the feature order matches training
+        transaction = transaction[
+            feature_names
+        ]
 
-        # Scale the same numerical columns used during training
+        # Scale numerical values
         numerical_columns = [
             "amt",
             "city_pop",
-            "lat",
-            "long",
-            "merch_lat",
-            "merch_long",
             "transaction_hour",
             "transaction_day",
             "transaction_month",
             "customer_age"
         ]
 
-        transaction[numerical_columns] = scaler.transform(
-            transaction[numerical_columns]
+        transaction[
+            numerical_columns
+        ] = scaler.transform(
+            transaction[
+                numerical_columns
+            ]
         )
 
-        prediction = model.predict(transaction)[0]
+        # Predict
+        prediction = model.predict(
+            transaction
+        )[0]
 
+        # Predict probability
         if hasattr(model, "predict_proba"):
-            probability = model.predict_proba(transaction)[0]
+            probability = model.predict_proba(
+                transaction
+            )[0]
         else:
             probability = None
 
         st.divider()
 
+        # Display result
         if prediction == 1:
-            st.error("⚠️ Possible Fraudulent Transaction")
+
+            st.error(
+                "⚠️ Possible Fraudulent Transaction"
+            )
 
             if probability is not None:
-                st.write(
-                    f"Fraud probability: **{probability[1] * 100:.2f}%**"
+                st.metric(
+                    "Fraud Probability",
+                    f"{probability[1] * 100:.2f}%"
                 )
 
             st.write(
@@ -242,11 +264,15 @@ if predict_button:
             )
 
         else:
-            st.success("✅ Likely Legitimate Transaction")
+
+            st.success(
+                "✅ Likely Legitimate Transaction"
+            )
 
             if probability is not None:
-                st.write(
-                    f"Legitimate probability: **{probability[0] * 100:.2f}%**"
+                st.metric(
+                    "Legitimate Probability",
+                    f"{probability[0] * 100:.2f}%"
                 )
 
             st.write(
@@ -254,5 +280,17 @@ if predict_button:
                 "fraud indicators."
             )
 
+    except ValueError as error:
+        st.error(
+            "The selected value does not match the values used "
+            "during model training."
+        )
+
+        st.write(
+            f"Technical details: {error}"
+        )
+
     except Exception as error:
-        st.error(f"Prediction error: {error}")
+        st.error(
+            f"Prediction error: {error}"
+        )
